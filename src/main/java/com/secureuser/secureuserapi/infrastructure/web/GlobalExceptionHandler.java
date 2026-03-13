@@ -1,12 +1,14 @@
 package com.secureuser.secureuserapi.infrastructure.web;
 
 import com.secureuser.secureuserapi.application.dto.ApiError;
+import com.secureuser.secureuserapi.application.exception.DuplicateResourceException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -15,6 +17,11 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleUnreadableMessage(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(ApiError.of("Request body is missing or malformed", "VALIDATION_ERROR"));
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {
@@ -40,6 +47,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNotFound(EntityNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(ex.getMessage(), "NOT_FOUND"));
+    }
+
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ApiError> handleDuplicateResource(DuplicateResourceException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(ex.getMessage(), "CONFLICT"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
