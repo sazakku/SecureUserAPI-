@@ -1,79 +1,99 @@
-# SecureUserAPI 🔐
+# SecureUserAPI
 
-A secure REST API for user and role management using Spring Boot 3, Java 21, and JWT authentication.
+A secure REST API for user and role management built with Spring Boot 3, Java 21, and JWT authentication. Designed following **hexagonal architecture** (ports and adapters) with TDD and RBAC.
 
-## 🚀 Features
-
-- User registration and login
-- Role-based access control (RBAC)
-- JWT token-based authentication
-- Secure password handling with BCrypt
-- DTOs for request/response separation
-- PostgreSQL for persistence
-- JPA + Hibernate
-- Exception handling
-- Input validation
-
-## 🧱 Tech Stack
+## Tech Stack
 
 - Java 21
 - Spring Boot 3.4.4
 - Spring Security
-- Spring Data JPA
+- Spring Data JPA / Hibernate
 - PostgreSQL
-- JWT
+- JJWT 0.12.6 (`io.jsonwebtoken`)
 - Lombok
 - Maven
+- JUnit 5 + Mockito
 
-## 🛠️ Project Structure
+## Features
 
-```text
-    src/
-     └── main/
-         └── java/
-             └── com/secureuser/api/
-                 ├── controller     # REST Controllers
-                 ├── dto            # Data Transfer Objects
-                 ├── model          # Entities (User, Role)
-                 ├── repository     # Data access layer
-                 ├── service        # Business logic
-                 ├── security       # JWT config, filters, auth
-                 └── config         # General config
-         └── resources/
-             ├── application.yml
-             └── schema.sql
+- Role-based access control (RBAC) with `ROLE_USER` and `ROLE_ADMIN`
+- JWT authentication (signature, expiration, issuer validation)
+- BCrypt password encoding
+- Java records as DTOs — immutable and validated
+- Bean Validation on all inputs (`@Valid`, `@NotBlank`, `@Email`, `@Pattern`, etc.)
+- Global exception handler (`@RestControllerAdvice`) covering 400/401/403/404/409/500
+- Consistent response envelope for success and error responses
+- Hexagonal architecture: domain, application, and infrastructure clearly separated
+
+## Project Structure
+
+```
+src/main/java/com/secureuser/secureuserapi/
+├── domain/
+│   ├── model/              # JPA entities: User, Role, RoleName (enum)
+│   └── repository/         # Port interfaces: UserRepository, RoleRepository
+├── application/
+│   ├── dto/                # Java records: RegisterRequest, LoginRequest,
+│   │                       #   UserResponse, AuthResponse, ApiResponse<T>, ApiError
+│   ├── mapper/             # UserMapper (entity <-> DTO)
+│   └── usecase/            # Use case implementations (added per endpoint)
+└── infrastructure/
+    ├── persistence/        # JpaUserRepository, JpaRoleRepository (Spring Data JPA)
+    ├── security/           # JwtTokenProvider, JwtAuthenticationFilter,
+    │                       #   UserDetailsServiceImpl, SecurityConfig
+    ├── web/                # REST controllers + GlobalExceptionHandler
+    └── config/             # ApplicationConfig (PasswordEncoder bean)
 ```
 
-## 🔧 Running the Project
+## Getting Started
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/tuusuario/secureuserapi.git
-   cd secureuserapi
-2. **Create PostgreSQL DB (example):**
+### 1. Clone the repo
 
-    ```sql
-    CREATE DATABASE secureuser;
-3. **Set your DB credentials in application.yml:**
-   ```yaml
-    spring:
-      datasource:
-        url: jdbc:postgresql://localhost:5432/secureuser
-        username: your_user
-        password: your_password
-4. **Run the app**
+```bash
+git clone https://github.com/sazakku/SecureUserAPI.git
+cd SecureUserAPI
+```
 
-    ```bash
-    ./mvnw spring-boot:run
-   
-5. **Access Swagger (optional if added):**
+### 2. Create the PostgreSQL database
 
-    ```bash
-    http://localhost:8080/swagger-ui.html
+```sql
+CREATE DATABASE secureuser;
+```
 
-##✅ **License**
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### 3. Configure credentials
 
+In `src/main/resources/application.properties`, set your values:
 
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/secureuser
+spring.datasource.username=your_user
+spring.datasource.password=your_password
+jwt.secret=your_secret_key
+```
+
+> Never commit real credentials. Use environment variables or a local override file.
+
+### 4. Run the app
+
+```bash
+./mvnw spring-boot:run
+```
+
+### 5. Run tests
+
+```bash
+./mvnw test
+```
+
+## API Conventions
+
+- All endpoints versioned under `/api/v1/`
+- Resource nouns only — no verbs in paths
+- Success response: `{ "data": ..., "message": "...", "timestamp": "..." }`
+- Error response: `{ "error": "...", "code": "...", "timestamp": "..." }`
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 > Built with ❤️ by [@sazakku](https://github.com/sazakku)
