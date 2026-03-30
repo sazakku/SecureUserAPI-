@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 SecureUserAPI is a Spring Boot 3.4.4 / Java 21 REST API for user and role management with JWT authentication. It uses PostgreSQL for persistence, Spring Security for auth, and Spring Data JPA/Hibernate for ORM.
 
 - **Main package:** `com.secureuser.secureuserapi`
-- **Current state:** Early scaffolding — only the entry point exists. All architecture must be built from scratch following the hexagonal architecture defined below.
+- **Current state:** Base hexagonal structure implemented. `POST /api/v1/auth/register` complete with unit tests and `@WebMvcTest`. Next: `POST /api/v1/auth/login`.
 
 ---
 
@@ -105,6 +105,8 @@ Apply these rules on every endpoint without exception:
 - Never log sensitive fields (passwords, tokens, personal data)
 - Never expose stack traces or internal details in error responses
 - Always validate JWT claims: signature, expiration, issuer, and required custom claims
+- **Paired DTOs must have consistent constraints** — if `RegisterRequest.password` uses `@Size(min=8, max=128)`, then `LoginRequest.password` must use the same bounds. Mismatched constraints create inconsistent behavior and DoS vectors
+- **JWT filter exception handling** — never use `catch (Exception ignored)` in `JwtAuthenticationFilter`. Always catch `JwtException | IllegalArgumentException` specifically to avoid masking unrelated runtime errors
 
 ---
 
@@ -125,11 +127,12 @@ Always implement a global `@ControllerAdvice` handling:
 
 ## Key Technology Notes
 
-- **JWT**: Add `io.jsonwebtoken:jjwt` or `com.auth0:java-jwt` to `pom.xml` before implementing security — it is not yet included.
+- **JWT**: `io.jsonwebtoken:jjwt-api/impl/jackson` 0.12.x included in `pom.xml`. Use `Jwts.parser().verifyWith(key).build().parseSignedClaims(token)`.
 - **Lombok**: Use `@Getter`, `@Setter`, `@Builder` on entities. Never use `@Data` on JPA entities (breaks Hibernate).
 - **Validation**: `spring-boot-starter-validation` is included — use `@Valid` on controllers and Bean Validation on DTOs.
 - **Password encoding**: BCrypt via Spring Security's `PasswordEncoder`.
 - **UUIDs**: Use UUIDs as primary keys on all entities — never expose sequential IDs.
+- **Import naming collisions**: Java has no import aliases. When a domain model name collides with a Spring/framework class (e.g., `User`), import the framework class and use the fully-qualified name for the domain model at the point of use. Document the decision with a comment.
 
 ---
 
@@ -148,6 +151,21 @@ test(endpoint): add unit tests for UserService
 test(endpoint): add @WebMvcTest for UserController
 fix(endpoint): fix validation constraint on email field
 ```
+
+### Grouped Commits Rule
+
+**Never bundle unrelated changes into a single commit.** Group commits by logical concern so that each commit can be reverted, cherry-picked, or bisected independently.
+
+Recommended grouping strategy:
+1. **`fix(scope)`** — one commit per production file changed (DTO fix, security fix, etc.)
+2. **`test(scope)`** — one commit for all test changes that belong to the same concern
+3. **`docs(scope)`** — one commit for documentation-only changes (CLAUDE.md, design docs)
+4. **`feat(scope)`** — one commit per new feature layer (service, controller, etc.) when the feature is too large to fit in a single commit
+
+Commits that must always be separate:
+- Production code changes vs test changes — never mix in the same commit
+- Fixes from a code review must each be their own commit, not squashed into the original
+- Documentation updates must not be bundled with implementation commits
 
 ---
 
@@ -204,11 +222,13 @@ Brief description of the feature and how it fits the existing architecture.
 - Show Spring Security filter chain when relevant
 - Include DB interaction via Spring Data JPA
 - Include the validation step before reaching the service layer
+- **Always include the race condition path**: when the endpoint writes to the DB, show the `DataIntegrityViolationException` scenario (two concurrent requests that both pass uniqueness checks but collide at the DB constraint) and its 409 response
 
 **Input Validation Detail:**
 - List every field validated, the constraint applied, and the reason
 - Specify path variable patterns and rejected formats
 - Note any sanitization applied to free-text fields
+- **Cross-DTO consistency**: if the feature introduces a request DTO that shares fields with an existing one (e.g., `LoginRequest` and `RegisterRequest` both have `username`/`password`), verify and document that the constraints are identical across both — flag any mismatch as a design issue
 
 **Architecture Decisions:**
 - Design patterns used and why
@@ -225,15 +245,19 @@ Brief description of the feature and how it fits the existing architecture.
 - [ ] No sensitive data in logs or error responses
 - [ ] `@PreAuthorize` applied at service layer
 - [ ] Rate limiting noted if endpoint is public
+- [ ] Paired DTOs have consistent field constraints (no divergence between register/login or similar pairs)
+- [ ] Race condition (concurrent write) path documented in sequence diagram with 409 response
 
 ### Tech Lead Hard Rules
 - Always use Mermaid syntax — diagrams must render in GitHub/GitLab
 - Never skip error flows or unauthorized access scenarios in sequence diagrams
+- **Never skip the race condition error path** on write endpoints — always show `DataIntegrityViolationException` → 409 in the sequence diagram
 - Java records for all DTOs unless mutability is explicitly required
 - Flag any ambiguous requirement before designing
 - One diagram per responsibility — keep them focused
 - Always consider N+1 query problems when designing JPA relationships
 - Always include the global exception handler design if not yet defined
+- When a new DTO shares field names with an existing one, explicitly compare constraints and flag any inconsistency before the diagram is finalized
 
 ---
 
@@ -275,6 +299,12 @@ If anything is missing, create it first and document what was created and why.
 #### 4a. Unit Tests (JUnit 5 + Mockito)
 Write tests for the service/use case layer first — happy path, each validation failure, each business rule edge case, unauthorized access. Tests must be failing before writing implementation.
 
+Mandatory scenarios for every write-endpoint service test:
+- Happy path
+- Each uniqueness/business rule violation
+- Missing dependency (e.g., `ROLE_USER` not seeded) → `IllegalStateException`
+- **Race condition**: mock `repository.save()` throwing `DataIntegrityViolationException` and assert it propagates uncaught through the service
+
 #### 4b. Implementation
 Follow hexagonal layers in order:
 1. Domain: entity and repository interface
@@ -284,10 +314,19 @@ Follow hexagonal layers in order:
 #### 4c. Controller Slice Tests (@WebMvcTest)
 Cover: 200/201 happy path, 400 per invalid input, 401 missing/invalid JWT, 403 wrong role, 404/409 business errors. All tests must pass before committing.
 
+Mandatory scenarios for every write-endpoint controller test:
+- 201/200 happy path — verify full response envelope (`data`, `message`, `timestamp`)
+- 400 per each individual invalid field
+- 409 from `DuplicateResourceException` — verify specific error message
+- **409 from race condition** — mock service throwing `DataIntegrityViolationException`, verify status 409 and body `"Resource already exists"`
+- 500 from `IllegalStateException` — **must verify body `$.error` is `"An unexpected error occurred"`**, not just HTTP status
+- Sensitive fields (password, tokens) must not appear anywhere in the response body
+
 ### Step 5 — Self-Review Checklist
 - [ ] All unit tests pass
 - [ ] All @WebMvcTest tests pass
 - [ ] DTO fields have Bean Validation constraints
+- [ ] **Paired DTOs have identical constraints** on shared fields (login/register username, password)
 - [ ] Path variables use regex constraints
 - [ ] No native queries with string concatenation
 - [ ] No sensitive data in logs or error messages
@@ -295,6 +334,10 @@ Cover: 200/201 happy path, 400 per invalid input, 401 missing/invalid JWT, 403 w
 - [ ] Global `@ControllerAdvice` handles all error scenarios
 - [ ] Code follows hexagonal architecture layers
 - [ ] Lombok used correctly (no @Data on JPA entities)
+- [ ] **Race condition tested** in both unit test (propagation) and @WebMvcTest (409 response)
+- [ ] **500 test verifies response body** (`$.error = "An unexpected error occurred"`), not just HTTP status
+- [ ] **JWT filter uses** `catch (JwtException | IllegalArgumentException ignored)` — not `catch (Exception ignored)`
+- [ ] **Import naming collisions resolved** — if a domain model shares a name with a framework class, import the framework class and use FQN for the domain model; add a comment explaining the strategy
 
 ### Step 6 — Commit, Push & PR
 ```bash
@@ -313,3 +356,7 @@ Then open a PR to `develop` using the PR template defined above.
 - Never use Hibernate auto-ddl to drop tables in staging or production
 - One PR per endpoint
 - If the Tech Lead document is incomplete or contradictory, stop and report it before proceeding
+- **Never use `catch (Exception ignored)` in security filters** — always catch `JwtException | IllegalArgumentException` specifically
+- **Always test the race condition** on write endpoints — both at the service layer (exception propagates) and at the controller layer (returns 409)
+- **500 error tests must assert the response body** — verifying only the HTTP status is insufficient; the body must contain the generic safe message
+- **Paired request DTOs must have consistent validation** — before submitting, compare constraints between related DTOs (e.g., login vs register) field by field
