@@ -19,6 +19,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import org.springframework.dao.DataIntegrityViolationException;
+
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -248,6 +250,26 @@ class UserRegistrationServiceTest {
                 .hasMessage("Default role ROLE_USER not found. Ensure roles are seeded.");
 
         verify(userRepository, never()).save(any());
+    }
+
+    // ── Race condition ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("register: DataIntegrityViolationException from save() propagates (concurrent duplicate)")
+    void register_raceCondition_propagatesDataIntegrityViolationException() {
+        RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
+
+        when(userRepository.existsByUsername("john_doe")).thenReturn(false);
+        when(userRepository.existsByEmail("john@example.com")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$encoded");
+        when(roleRepository.findByName(RoleName.ROLE_USER)).thenReturn(Optional.of(roleUser));
+        when(userRepository.save(any(User.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        assertThatThrownBy(() -> userRegistrationService.register(request))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        verify(userRepository, never()).findByUsername(anyString());
     }
 
     // ── Interaction verification ──────────────────────────────────────────────

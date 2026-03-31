@@ -1,5 +1,6 @@
 package com.secureuser.secureuserapi.infrastructure.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,8 +41,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
-            } catch (Exception ignored) {
-                // Invalid token — proceed unauthenticated
+            } catch (JwtException | IllegalArgumentException ignored) {
+                // Invalid or malformed token — proceed unauthenticated
             }
         }
 

@@ -16,6 +16,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
@@ -281,6 +282,24 @@ class AuthControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
                 .andExpect(jsonPath("$.error").value("An unexpected error occurred"));
+    }
+
+    // ── 409 Race condition ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /register: 409 on race condition (concurrent duplicate bypasses existsBy checks)")
+    void register_raceCondition_returns409() throws Exception {
+        when(registrationService.register(any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.error").value("Resource already exists"));
     }
 
     // ── No sensitive data in response ─────────────────────────────────────────
