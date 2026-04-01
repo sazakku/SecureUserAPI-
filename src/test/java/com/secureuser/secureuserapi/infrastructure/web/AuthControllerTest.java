@@ -1,9 +1,12 @@
 package com.secureuser.secureuserapi.infrastructure.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.secureuser.secureuserapi.application.dto.AuthResponse;
+import com.secureuser.secureuserapi.application.dto.LoginRequest;
 import com.secureuser.secureuserapi.application.dto.RegisterRequest;
 import com.secureuser.secureuserapi.application.dto.UserResponse;
 import com.secureuser.secureuserapi.application.exception.DuplicateResourceException;
+import com.secureuser.secureuserapi.application.service.UserLoginService;
 import com.secureuser.secureuserapi.application.service.UserRegistrationService;
 import com.secureuser.secureuserapi.infrastructure.security.JwtAuthenticationFilter;
 import com.secureuser.secureuserapi.infrastructure.security.JwtTokenProvider;
@@ -12,11 +15,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
@@ -36,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   from being added to the MockMvc filter chain, so it never intercepts requests.
  * - TestSecurityConfig provides a permitAll security chain so Spring Security
  *   auto-config does not return 401/403 for the unauthenticated register endpoint.
- * - @MockBean for JwtTokenProvider and UserDetailsService satisfies the
+ * - @MockitoBean for JwtTokenProvider and UserDetailsService satisfies the
  *   dependency graph wired by the auto-configured security beans.
  */
 @WebMvcTest(AuthController.class)
@@ -50,19 +54,27 @@ class AuthControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private UserRegistrationService registrationService;
 
-    @MockBean
+    @MockitoBean
+    private UserLoginService userLoginService;
+
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
-    @MockBean
+    @MockitoBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @MockBean
+    @MockitoBean
     private UserDetailsService userDetailsService;
 
-    private static final String URL = "/api/v1/auth/register";
+    private static final String REGISTER_URL = "/api/v1/auth/register";
+    private static final String LOGIN_URL = "/api/v1/auth/login";
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // POST /register tests
+    // ═════════════════════════════════════════════════════════════════════════
 
     // ── 201 Happy path ────────────────────────────────────────────────────────
 
@@ -75,7 +87,7 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -95,7 +107,7 @@ class AuthControllerTest {
     void register_blankUsername_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -108,7 +120,7 @@ class AuthControllerTest {
     void register_usernameTooShort_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("ab", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -122,7 +134,7 @@ class AuthControllerTest {
         String longUsername = "a".repeat(51);
         RegisterRequest request = new RegisterRequest(longUsername, "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -135,7 +147,7 @@ class AuthControllerTest {
     void register_usernameWithInvalidChars_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("john doe!", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -148,7 +160,7 @@ class AuthControllerTest {
     void register_blankEmail_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("john_doe", "", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -161,7 +173,7 @@ class AuthControllerTest {
     void register_malformedEmail_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("john_doe", "not-an-email", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -175,7 +187,7 @@ class AuthControllerTest {
         String longEmail = "a".repeat(90) + "@example.com";
         RegisterRequest request = new RegisterRequest("john_doe", longEmail, "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -188,7 +200,7 @@ class AuthControllerTest {
     void register_blankPassword_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -201,7 +213,7 @@ class AuthControllerTest {
     void register_passwordTooShort_returns400() throws Exception {
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "short");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -215,7 +227,7 @@ class AuthControllerTest {
         String longPassword = "a".repeat(129);
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", longPassword);
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -226,7 +238,7 @@ class AuthControllerTest {
     @Test
     @DisplayName("POST /register: 400 when request body is missing")
     void register_missingBody_returns400() throws Exception {
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
     }
@@ -241,7 +253,7 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("existing_user", "new@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
@@ -257,7 +269,7 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("new_user", "existing@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
@@ -276,7 +288,7 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError())
@@ -294,7 +306,7 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
@@ -313,10 +325,148 @@ class AuthControllerTest {
 
         RegisterRequest request = new RegisterRequest("john_doe", "john@example.com", "password123");
 
-        mockMvc.perform(post(URL)
+        mockMvc.perform(post(REGISTER_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.password").doesNotExist())
+                .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // POST /login tests
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── 200 Happy path ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 200 with valid credentials")
+    void login_validCredentials_returns200() throws Exception {
+        AuthResponse authResponse = AuthResponse.of("jwt.token.here", "john_doe");
+        when(userLoginService.login(any())).thenReturn(authResponse);
+
+        LoginRequest request = new LoginRequest("john_doe", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Login successful"))
+                .andExpect(jsonPath("$.data.token").value("jwt.token.here"))
+                .andExpect(jsonPath("$.data.type").value("Bearer"))
+                .andExpect(jsonPath("$.data.username").value("john_doe"))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    // ── 400 Validation failures ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 400 when username is blank")
+    void login_blankUsername_returns400() throws Exception {
+        LoginRequest request = new LoginRequest("", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("username")));
+    }
+
+    @Test
+    @DisplayName("POST /login: 400 when username exceeds 50 characters")
+    void login_usernameTooLong_returns400() throws Exception {
+        String longUsername = "a".repeat(51);
+        LoginRequest request = new LoginRequest(longUsername, "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("username")));
+    }
+
+    @Test
+    @DisplayName("POST /login: 400 when password is blank")
+    void login_blankPassword_returns400() throws Exception {
+        LoginRequest request = new LoginRequest("john_doe", "");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("password")));
+    }
+
+    @Test
+    @DisplayName("POST /login: 400 when password is too short (< 8 chars)")
+    void login_passwordTooShort_returns400() throws Exception {
+        LoginRequest request = new LoginRequest("john_doe", "short");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("password")));
+    }
+
+    @Test
+    @DisplayName("POST /login: 400 when password exceeds 128 characters")
+    void login_passwordTooLong_returns400() throws Exception {
+        String longPassword = "a".repeat(129);
+        LoginRequest request = new LoginRequest("john_doe", longPassword);
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("password")));
+    }
+
+    @Test
+    @DisplayName("POST /login: 400 when request body is missing")
+    void login_missingBody_returns400() throws Exception {
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ── 401 Bad credentials ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 401 when credentials are wrong")
+    void login_badCredentials_returns401() throws Exception {
+        when(userLoginService.login(any()))
+                .thenThrow(new BadCredentialsException("Bad credentials"));
+
+        LoginRequest request = new LoginRequest("john_doe", "wrongpassword");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.error").value("Authentication failed"));
+    }
+
+    // ── No sensitive data in response ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: response never contains password field")
+    void login_responseNeverContainsPassword() throws Exception {
+        AuthResponse authResponse = AuthResponse.of("jwt.token.here", "john_doe");
+        when(userLoginService.login(any())).thenReturn(authResponse);
+
+        LoginRequest request = new LoginRequest("john_doe", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.password").doesNotExist())
                 .andExpect(jsonPath("$.password").doesNotExist());
     }
