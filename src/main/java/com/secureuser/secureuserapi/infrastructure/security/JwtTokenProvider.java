@@ -1,5 +1,6 @@
 package com.secureuser.secureuserapi.infrastructure.security;
 
+import com.secureuser.secureuserapi.application.port.out.TokenProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -13,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Component
-public class JwtTokenProvider {
+public class JwtTokenProvider implements TokenProvider {
 
     @Value("${jwt.secret}")
     private String secret;
