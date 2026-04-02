@@ -470,4 +470,37 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.password").doesNotExist())
                 .andExpect(jsonPath("$.password").doesNotExist());
     }
+
+    // ── 400 Username too short ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 400 when username is too short (< 3 chars)")
+    void login_usernameTooShort_returns400() throws Exception {
+        LoginRequest request = new LoginRequest("ab", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("username")));
+    }
+
+    // ── 500 Unexpected error ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 500 body contains safe generic message, not stack trace")
+    void login_unexpectedException_returns500WithSafeBody() throws Exception {
+        when(userLoginService.login(any()))
+                .thenThrow(new RuntimeException("internal details must not leak"));
+
+        LoginRequest request = new LoginRequest("john_doe", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.error").value("An unexpected error occurred"));
+    }
 }
