@@ -9,7 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 SecureUserAPI is a Spring Boot 3.4.4 / Java 21 REST API for user and role management with JWT authentication. It uses PostgreSQL for persistence, Spring Security for auth, and Spring Data JPA/Hibernate for ORM.
 
 - **Main package:** `com.secureuser.secureuserapi`
-- **Current state:** Base hexagonal structure implemented. `POST /api/v1/auth/register` complete with unit tests and `@WebMvcTest`. Next: `POST /api/v1/auth/login`.
+- **Current state:** Two endpoints fully implemented with unit tests and `@WebMvcTest`:
+  - `POST /api/v1/auth/register` — user registration, assigns `ROLE_USER` automatically
+  - `POST /api/v1/auth/login` — JWT authentication, returns signed Bearer token
 
 ---
 
@@ -61,18 +63,18 @@ The project follows **hexagonal architecture** (ports and adapters). Do NOT use 
 ```
 com.secureuser.secureuserapi/
 ├── domain/
-│   ├── model/          # JPA entities (User, Role)
-│   ├── repository/     # Repository interfaces (ports)
-│   └── service/        # Domain services
+│   ├── model/          # JPA entities (User, Role, RoleName)
+│   └── repository/     # Repository interfaces (ports): UserRepository, RoleRepository
 ├── application/
-│   ├── usecase/        # Use case implementations
 │   ├── dto/            # Java records for request/response
-│   └── mapper/         # Entity <-> DTO mappers
+│   ├── exception/      # Custom exceptions (e.g. DuplicateResourceException)
+│   ├── mapper/         # Entity <-> DTO mappers
+│   └── service/        # Use case services (one per feature/endpoint)
 └── infrastructure/
+    ├── config/         # ApplicationConfig (PasswordEncoder), DataInitializer (role seeding)
     ├── persistence/    # Spring Data JPA repository implementations
-    ├── security/       # JWT filter, SecurityConfig, UserDetailsService
-    ├── web/            # REST controllers
-    └── config/         # General Spring configuration beans
+    ├── security/       # JwtTokenProvider, JwtAuthenticationFilter, SecurityConfig, UserDetailsServiceImpl
+    └── web/            # REST controllers, GlobalExceptionHandler
 ```
 
 ### Layer Rules
@@ -114,14 +116,16 @@ Apply these rules on every endpoint without exception:
 
 Always implement a global `@ControllerAdvice` handling:
 
-| Exception                          | HTTP Status |
-|------------------------------------|-------------|
-| `MethodArgumentNotValidException`  | 400         |
-| `AuthenticationException`          | 401         |
-| `AccessDeniedException`            | 403         |
-| `EntityNotFoundException`          | 404         |
-| `DataIntegrityViolationException`  | 409         |
-| `Exception` (generic)              | 500         |
+| Exception                          | HTTP Status | Error Code         | Notes                                          |
+|------------------------------------|-------------|--------------------|------------------------------------------------|
+| `HttpMessageNotReadableException`  | 400         | `VALIDATION_ERROR` | Missing or malformed request body              |
+| `MethodArgumentNotValidException`  | 400         | `VALIDATION_ERROR` | Bean Validation failure; includes field names  |
+| `AuthenticationException`          | 401         | `UNAUTHORIZED`     | Bad credentials or missing JWT                 |
+| `AccessDeniedException`            | 403         | `FORBIDDEN`        | Authenticated but wrong role                   |
+| `EntityNotFoundException`          | 404         | `NOT_FOUND`        | Message from exception exposed (safe)          |
+| `DuplicateResourceException`       | 409         | `CONFLICT`         | Application-level uniqueness check             |
+| `DataIntegrityViolationException`  | 409         | `CONFLICT`         | DB-level constraint violation (race condition) |
+| `Exception` (generic)              | 500         | `INTERNAL_ERROR`   | Message must be `"An unexpected error occurred"` — never expose internals |
 
 ---
 
@@ -340,12 +344,21 @@ Mandatory scenarios for every write-endpoint controller test:
 - [ ] **Import naming collisions resolved** — if a domain model shares a name with a framework class, import the framework class and use FQN for the domain model; add a comment explaining the strategy
 
 ### Step 6 — Commit, Push & PR
+
+Stage files explicitly — never use `git add .` or `git add -A` to avoid accidentally committing sensitive files (`.env`, credential overrides, IDE files):
+
 ```bash
-git add .
+# Stage production files only
+git add src/main/java/...
 git commit -m "feat(endpoint): add [METHOD] [path] - [brief description]"
+
+# Stage test files separately
+git add src/test/java/...
 git commit -m "test(endpoint): add unit and WebMvcTest for [feature name]"
+
 git push origin feature/[endpoint-name]
 ```
+
 Then open a PR to `develop` using the PR template defined above.
 
 ### Backend Developer Hard Rules

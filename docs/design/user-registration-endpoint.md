@@ -4,6 +4,15 @@
 
 ---
 
+| Field       | Value                                    |
+|-------------|------------------------------------------|
+| **Status**  | Implemented                              |
+| **Version** | 1.0                                      |
+| **Date**    | 2026-04-12                               |
+| **Author**  | Tech Lead Agent                          |
+
+---
+
 ### Context
 
 This document describes the design for the user registration endpoint in SecureUserAPI. The endpoint allows new users to create an account by providing a username, email, and password. It is a public endpoint (no authentication required), positioned under `/api/v1/auth/**` which is already configured as `permitAll` in `SecurityConfig`.
@@ -13,9 +22,11 @@ The feature integrates with the existing hexagonal architecture:
 - **Application layer** already provides `RegisterRequest` (validated record), `UserResponse`, `ApiResponse<T>`, `ApiError`, and `UserMapper`.
 - **Infrastructure layer** already provides `JpaUserRepository`, `JpaRoleRepository`, `SecurityConfig`, `GlobalExceptionHandler`, `ApplicationConfig` (BCryptPasswordEncoder bean), and the full JWT security stack.
 
-The missing components are:
-1. `application/service/UserRegistrationService.java` -- use case orchestrating registration logic.
-2. `infrastructure/web/AuthController.java` -- REST controller exposing the endpoint.
+The components created to implement this endpoint:
+1. `application/exception/DuplicateResourceException.java` — custom runtime exception for uniqueness violations.
+2. `application/service/UserRegistrationService.java` — use case orchestrating registration logic.
+3. `infrastructure/web/AuthController.java` — REST controller exposing the endpoint (shared with login).
+4. `infrastructure/config/DataInitializer.java` — seeds `ROLE_USER` and `ROLE_ADMIN` on startup.
 
 ---
 
@@ -337,13 +348,17 @@ Recommended limit: 5 registrations per IP per minute.
 
 ---
 
-### Summary of Required Changes
+### Implementation Summary
 
-| File | Action | Description |
-|------|--------|-------------|
-| `application/dto/RegisterRequest.java` | **Modify** | Add `@Pattern(regexp = "^[a-zA-Z0-9_]+$")` to `username` |
-| `application/exception/DuplicateResourceException.java` | **Create** | Custom runtime exception for uniqueness violations |
-| `application/service/UserRegistrationService.java` | **Create** | Registration use case: validate uniqueness, encode password, assign role, persist, map to response |
-| `infrastructure/web/AuthController.java` | **Create** | REST controller with `@PostMapping("/api/v1/auth/register")` |
-| `infrastructure/web/GlobalExceptionHandler.java` | **Modify** | Add `@ExceptionHandler(DuplicateResourceException.class)` returning 409 |
-| Role seeding mechanism | **Create** | Ensure `ROLE_USER` exists in `roles` table at startup |
+All components described in this document have been implemented and tested.
+
+| File | Status | Notes |
+|------|--------|-------|
+| `application/dto/RegisterRequest.java` | Done | `@Pattern(regexp = "^[a-zA-Z0-9_]+$")` applied to `username` |
+| `application/exception/DuplicateResourceException.java` | Done | Custom runtime exception for uniqueness violations |
+| `application/service/UserRegistrationService.java` | Done | Registration use case: uniqueness checks, BCrypt encoding, role assignment, persistence |
+| `infrastructure/web/AuthController.java` | Done | Shared controller with login; `@PostMapping("/register")` returns 201 |
+| `infrastructure/web/GlobalExceptionHandler.java` | Done | Handles `DuplicateResourceException` (409) and `DataIntegrityViolationException` (409 race condition fallback) |
+| `infrastructure/config/DataInitializer.java` | Done | Seeds `ROLE_USER` and `ROLE_ADMIN` via `@EventListener(ApplicationReadyEvent.class)` |
+
+> **Open item:** Rate limiting on `/api/v1/auth/register` is still pending. A `// TODO: rate limiting` comment exists in `AuthController.java`. Must be resolved before production deployment.
