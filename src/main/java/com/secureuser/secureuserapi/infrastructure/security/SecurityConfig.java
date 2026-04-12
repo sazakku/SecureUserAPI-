@@ -20,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -30,6 +31,16 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .anyRequest().authenticated()
                 )
+                // Filter execution order: RateLimitFilter -> JwtAuthenticationFilter -> UPAF
+                //
+                // Both custom filters are anchored to UsernamePasswordAuthenticationFilter.
+                // When two filters share the same anchor, Spring Security inserts them in
+                // declaration order (first registered = runs first among peers). Therefore
+                // RateLimitFilter is registered first so it runs before JwtAuthenticationFilter.
+                //
+                // This ensures brute-force login attempts are rejected before any JWT parsing,
+                // UserDetailsService lookup, or database query executes.
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
