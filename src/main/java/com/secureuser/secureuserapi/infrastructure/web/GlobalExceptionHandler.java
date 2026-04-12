@@ -2,6 +2,7 @@ package com.secureuser.secureuserapi.infrastructure.web;
 
 import com.secureuser.secureuserapi.application.dto.ApiError;
 import com.secureuser.secureuserapi.application.exception.DuplicateResourceException;
+import com.secureuser.secureuserapi.application.exception.RateLimitExceededException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleConflict(DataIntegrityViolationException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of("Resource already exists", "CONFLICT"));
+    }
+
+    /**
+     * Safety-net handler for {@link RateLimitExceededException}.
+     *
+     * The primary rate-limit enforcement path is {@code RateLimitFilter}, which
+     * writes the 429 response directly. This handler covers edge cases where the
+     * exception is thrown from within the controller or service layer (e.g.,
+     * future interceptors or annotated rate-limit checks).
+     */
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiError> handleRateLimitExceeded(RateLimitExceededException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(ApiError.of(
+                        "Rate limit exceeded. Too many login attempts. Please try again later.",
+                        "RATE_LIMITED"
+                ));
     }
 
     @ExceptionHandler(Exception.class)
