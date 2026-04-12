@@ -2,6 +2,7 @@ package com.secureuser.secureuserapi.application.service;
 
 import com.secureuser.secureuserapi.application.dto.AuthResponse;
 import com.secureuser.secureuserapi.application.dto.LoginRequest;
+import com.secureuser.secureuserapi.application.port.out.TokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,8 +16,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
-
-import com.secureuser.secureuserapi.infrastructure.security.JwtTokenProvider;
 
 import java.util.Collections;
 
@@ -32,7 +31,7 @@ class UserLoginServiceTest {
     private AuthenticationManager authenticationManager;
 
     @Mock
-    private JwtTokenProvider jwtTokenProvider;
+    private TokenProvider tokenProvider;
 
     @InjectMocks
     private UserLoginService userLoginService;
@@ -55,7 +54,7 @@ class UserLoginServiceTest {
         when(auth.getPrincipal()).thenReturn(userDetails);
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(auth);
-        when(jwtTokenProvider.generateToken(userDetails)).thenReturn("jwt.token.here");
+        when(tokenProvider.generateToken(userDetails)).thenReturn("jwt.token.here");
 
         AuthResponse result = userLoginService.login(request);
 
@@ -73,7 +72,7 @@ class UserLoginServiceTest {
         when(auth.getPrincipal()).thenReturn(userDetails);
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(auth);
-        when(jwtTokenProvider.generateToken(any())).thenReturn("jwt.token.here");
+        when(tokenProvider.generateToken(any())).thenReturn("jwt.token.here");
 
         userLoginService.login(request);
 
@@ -93,13 +92,13 @@ class UserLoginServiceTest {
         Authentication auth = mock(Authentication.class);
         when(auth.getPrincipal()).thenReturn(userDetails);
         when(authenticationManager.authenticate(any())).thenReturn(auth);
-        when(jwtTokenProvider.generateToken(userDetails)).thenReturn("signed.jwt");
+        when(tokenProvider.generateToken(userDetails)).thenReturn("signed.jwt");
 
         userLoginService.login(request);
 
         // Verify token is generated from the UserDetails returned by the authentication manager,
         // not from a raw username string (ensures the token reflects the authoritative principal)
-        verify(jwtTokenProvider).generateToken(userDetails);
+        verify(tokenProvider).generateToken(userDetails);
     }
 
     @Test
@@ -110,7 +109,7 @@ class UserLoginServiceTest {
         Authentication auth = mock(Authentication.class);
         when(auth.getPrincipal()).thenReturn(userDetails);
         when(authenticationManager.authenticate(any())).thenReturn(auth);
-        when(jwtTokenProvider.generateToken(any())).thenReturn("jwt.token");
+        when(tokenProvider.generateToken(any())).thenReturn("jwt.token");
 
         AuthResponse result = userLoginService.login(request);
 
@@ -132,7 +131,7 @@ class UserLoginServiceTest {
         assertThatThrownBy(() -> userLoginService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verify(jwtTokenProvider, never()).generateToken(any());
+        verify(tokenProvider, never()).generateToken(any());
     }
 
     @Test
@@ -146,6 +145,6 @@ class UserLoginServiceTest {
         assertThatThrownBy(() -> userLoginService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verifyNoInteractions(jwtTokenProvider);
+        verifyNoInteractions(tokenProvider);
     }
 }

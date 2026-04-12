@@ -1,8 +1,10 @@
 package com.secureuser.secureuserapi.infrastructure.security;
 
+import com.secureuser.secureuserapi.application.port.out.TokenProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
@@ -12,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Component
-public class JwtTokenProvider {
+public class JwtTokenProvider implements TokenProvider {
 
     @Value("${jwt.secret}")
     private String secret;
@@ -23,8 +25,15 @@ public class JwtTokenProvider {
     @Value("${jwt.issuer}")
     private String issuer;
 
+    private SecretKey signingKey;
+
+    @PostConstruct
+    void init() {
+        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    }
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        return signingKey;
     }
 
     public String generateToken(UserDetails userDetails) {

@@ -100,7 +100,7 @@ Apply these rules on every endpoint without exception:
 - `@Valid` on all controller method parameters
 - Bean Validation constraints on every DTO field (`@NotBlank`, `@Size`, `@Pattern`, `@Email`)
 - `@Pattern` with regex on path variables: `@Pattern(regexp = "^[a-zA-Z0-9-]{1,36}$")`
-- `@PreAuthorize` at the **service layer**, not just the controller
+- `@PreAuthorize` at the **service layer**, not just the controller — **exception**: public auth endpoints (`/auth/register`, `/auth/login`) must NOT carry `@PreAuthorize` because they must be callable without a JWT. Adding `@PreAuthorize` to these methods would break unauthenticated access
 - JPQL with named parameters only — never string concatenation in queries
 - Never log sensitive fields (passwords, tokens, personal data)
 - Never expose stack traces or internal details in error responses
