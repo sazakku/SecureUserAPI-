@@ -486,6 +486,23 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.error", containsString("username")));
     }
 
+    // ── 400 Username @Pattern violation ──────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /login: 400 when username contains characters outside [a-zA-Z0-9_]")
+    void login_usernameWithInvalidChars_returns400() throws Exception {
+        // Spaces, hyphens, and special characters are rejected by
+        // @Pattern(regexp = "^[a-zA-Z0-9_]+$") on LoginRequest.username
+        LoginRequest request = new LoginRequest("john doe!", "password123");
+
+        mockMvc.perform(post(LOGIN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error", containsString("username")));
+    }
+
     // ── 500 Unexpected error ──────────────────────────────────────────────────
 
     @Test
