@@ -8,6 +8,7 @@ import com.secureuser.secureuserapi.application.dto.UserResponse;
 import com.secureuser.secureuserapi.application.exception.DuplicateResourceException;
 import com.secureuser.secureuserapi.application.service.UserLoginService;
 import com.secureuser.secureuserapi.application.service.UserRegistrationService;
+import com.secureuser.secureuserapi.application.service.RateLimiterService;
 import com.secureuser.secureuserapi.infrastructure.security.JwtAuthenticationFilter;
 import com.secureuser.secureuserapi.infrastructure.security.JwtTokenProvider;
 import org.junit.jupiter.api.DisplayName;
@@ -37,11 +38,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * Security setup:
  * - @AutoConfigureMockMvc(addFilters = false) prevents JwtAuthenticationFilter
- *   from being added to the MockMvc filter chain, so it never intercepts requests.
+ *   and RateLimitFilter from being added to the MockMvc filter chain.
  * - TestSecurityConfig provides a permitAll security chain so Spring Security
- *   auto-config does not return 401/403 for the unauthenticated register endpoint.
- * - @MockitoBean for JwtTokenProvider and UserDetailsService satisfies the
- *   dependency graph wired by the auto-configured security beans.
+ *   auto-config does not return 401/403 for the unauthenticated auth endpoints.
+ * - @MockitoBean for JwtTokenProvider, JwtAuthenticationFilter, UserDetailsService,
+ *   and RateLimiterService satisfies the dependency graph wired by the auto-configured
+ *   security beans (RateLimitFilter @Component depends on RateLimiterService).
+ *
+ * Rate-limit specific scenarios (429 responses, Retry-After header, filter chain
+ * execution) are covered by RateLimitFilterIntegrationTest using standaloneSetup.
  */
 @WebMvcTest(AuthController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -68,6 +73,11 @@ class AuthControllerTest {
 
     @MockitoBean
     private UserDetailsService userDetailsService;
+
+    // Required to satisfy the RateLimitFilter @Component dependency in the
+    // WebMvcTest Spring context (even though filters are disabled via addFilters=false)
+    @MockitoBean
+    private RateLimiterService rateLimiterService;
 
     private static final String REGISTER_URL = "/api/v1/auth/register";
     private static final String LOGIN_URL = "/api/v1/auth/login";
